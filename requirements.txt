@@ -1,0 +1,43 @@
+# Проверенный набор версий (Python 3.12, Windows 11). Прямые зависимости: faster-whisper, ctranslate2,
+# nvidia-cublas-cu12, nvidia-cudnn-cu12, sentencepiece, customtkinter, tkinterdnd2, pillow, deep-translator, send2trash, tqdm;
+# остальное — их зависимости, закреплены для воспроизводимой установки.
+anyio==4.15.1
+av==19.0.2
+beautifulsoup4==4.15.0
+certifi==2026.10.23
+charset-normalizer==3.5.2
+click==8.5.0
+colorama==0.4.6
+ctranslate2==4.8.3
+customtkinter==6.0.0
+darkdetect==0.8.0
+deep-translator==1.11.4
+faster-whisper==1.2.1
+filelock==4.2.4
+flatbuffers==25.12.19
+fsspec==2026.9.0
+h11==0.16.0
+hf-xet==1.7.0
+httpcore2==2.16.0
+httpx2==2.16.0
+huggingface-hub==2.3.0
+idna==3.20
+numpy==2.5.4
+nvidia-cublas-cu12==12.9.2.10
+nvidia-cuda-nvrtc-cu12==12.9.86
+nvidia-cudnn-cu12==9.27.0.42
+onnxruntime==1.31.0
+packaging==26.3
+pillow==13.0.0
+protobuf==7.36.2
+pyyaml==6.0.3
+requests==2.34.2
+send2trash==2.1.0
+sentencepiece==0.2.2
+soupsieve==3.0.4
+tkinterdnd2==0.6.4
+tokenizers==0.23.3
+tqdm==4.70.1
+truststore==0.10.5
+typing-extensions==4.16.0
+urllib3==2.8.0
