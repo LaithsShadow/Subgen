@@ -28,7 +28,7 @@ Subgen — программа для Windows, которая делает к в�
 
 1. Скачайте проект: зелёная кнопка **Code → Download ZIP** на GitHub (распакуйте в любую папку) или
    ```
-   git clone https://github.com/Laith-UE5/Subgen.git
+   git clone https://github.com/LaithsShadow/Subgen.git
    ```
 2. Запустите **`install.cmd`** двойным щелчком, выберите язык интерфейса (номер или код из списка; Enter — язык Windows) и дождитесь надписи «Готово». Без вопроса: `powershell -ExecutionPolicy Bypass -File install.ps1 -Lang ru`.
 

@@ -26,7 +26,7 @@ The interface is available in ~50 languages. You pick it during installation (de
 
 ## Installation
 
-1. Download the project (**Code → Download ZIP** on GitHub and unpack it anywhere) or `git clone https://github.com/Laith-UE5/Subgen.git`.
+1. Download the project (**Code → Download ZIP** on GitHub and unpack it anywhere) or `git clone https://github.com/LaithsShadow/Subgen.git`.
 2. Run **`install.cmd`**, choose the interface language (a number or a code from the list; Enter keeps your Windows language) and wait for "Готово" (done). Non-interactive: `powershell -ExecutionPolicy Bypass -File install.ps1 -Lang en`.
 
 The installer can be re-run safely. It installs [uv](https://docs.astral.sh/uv/) and ffmpeg (`winget`, package `Gyan.FFmpeg`), Python 3.12 managed by uv with an environment in `%LOCALAPPDATA%\Subgen\venv`, the dependencies from `requirements.txt` (about 1.5 GB, mostly CUDA libraries), and creates **Subgen** shortcuts on the desktop and in the Start menu. Models live in `%LOCALAPPDATA%\Subgen\models`, settings (models, target language, `ui_lang`) in `%LOCALAPPDATA%\Subgen\settings.json`. The installer's own messages are in Russian.
