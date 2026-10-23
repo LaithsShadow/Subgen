@@ -163,13 +163,17 @@ def whisper(video, info, key):
 
 
 def google(lines):
-    from deep_translator import GoogleTranslator
-    tr = GoogleTranslator(source="en", target="ru")
+    import json, urllib.parse, urllib.request
+    # translate.googleapis.com (client=gtx) отвечает и там, где translate.google.com/m уводит на страницу-заглушку
+    url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=ru&dt=t"
 
     def call(text):
         for attempt in range(3):
             try:
-                return tr.translate(text)
+                req = urllib.request.Request(url, data=urllib.parse.urlencode({"q": text}).encode(),
+                                             headers={"User-Agent": "Mozilla/5.0"})
+                with urllib.request.urlopen(req, timeout=30) as r:
+                    return "".join(seg[0] for seg in json.load(r)[0] if seg[0]).strip()
             except Exception:
                 time.sleep(2 * (attempt + 1))
         return None

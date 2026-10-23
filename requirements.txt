@@ -1,5 +1,5 @@
 # Проверенный набор версий (Python 3.12, Windows 11). Прямые зависимости: faster-whisper, ctranslate2,
-# nvidia-cublas-cu12, nvidia-cudnn-cu12, sentencepiece, customtkinter, tkinterdnd2, pillow, deep-translator, send2trash, tqdm;
+# nvidia-cublas-cu12, nvidia-cudnn-cu12, sentencepiece, customtkinter, tkinterdnd2, pillow, send2trash, tqdm;
 # остальное — их зависимости, закреплены для воспроизводимой установки.
 anyio==4.15.1
 av==19.0.2
@@ -11,7 +11,6 @@ colorama==0.4.6
 ctranslate2==4.8.3
 customtkinter==6.0.0
 darkdetect==0.8.0
-deep-translator==1.11.4
 faster-whisper==1.2.1
 filelock==4.2.4
 flatbuffers==25.12.19

@@ -80,7 +80,7 @@ if ($ok) {
 Step 'Зависимости (первый раз — около 1,5 ГБ, в основном библиотеки CUDA)'
 & $Uv pip install --python $Py -r (Join-Path $Repo 'requirements.txt')
 if ($LASTEXITCODE) { Fail 'не удалось установить зависимости' }
-& $Py -c "import faster_whisper, ctranslate2, sentencepiece, customtkinter, tkinterdnd2, deep_translator, send2trash"
+& $Py -c "import faster_whisper, ctranslate2, sentencepiece, customtkinter, tkinterdnd2, send2trash"
 if ($LASTEXITCODE) { Fail 'зависимости установились, но не импортируются' }
 
 Step 'Ярлыки'
