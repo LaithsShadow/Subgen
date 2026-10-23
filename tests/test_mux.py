@@ -18,21 +18,39 @@ def rows(path):
     return [(r["type"], r["language"], r["title"], r["default"], r["ours"]) for r in tracks.streams(path)[1]]
 
 
-# 1. первый запуск: чужая дорожка остаётся (mov_text -> srt), наша английская — по умолчанию
-out = core.mux(video, core.probe(video), srt("en.srt", "Hello"), srt("ru.srt", "Привет"))
+def ours(path):
+    return [(core.lang(s), core.title(s), core.role(s)) for s in core.probe(path)["streams"] if core.is_ours(s)]
+
+
+# 1. первый запуск: чужая дорожка остаётся (mov_text -> srt), наша дорожка оригинала — по умолчанию
+out = core.mux(video, core.probe(video), srt("en.srt", "Hello"), srt("ru.srt", "Привет"), "en", "ru")
 assert out.endswith(".mkv") and not os.path.exists(video)
 r = rows(out)
 assert r[2] == ("subtitle", "eng", "", False, False), r
-assert r[3] == ("subtitle", "eng", core.EN_TITLE, True, True), r
-assert r[4] == ("subtitle", "rus", core.RU_TITLE, False, True), r
+assert r[3] == ("subtitle", "eng", "English (Whisper)", True, True), r
+assert r[4] == ("subtitle", "rus", "Русский", False, True), r
+assert ours(out) == [("eng", "English (Whisper)", "orig"), ("rus", "Русский", "trans")], ours(out)
 
-# 2. повторный запуск заменяет только свои дорожки
-out = core.mux(out, core.probe(out), srt("en.srt", "Hello again"), srt("ru.srt", "Снова привет"))
-assert len(rows(out)) == 5 and [x[4] for x in rows(out)].count(True) == 2, rows(out)
+# 2. повторный запуск с другой парой заменяет только свои дорожки (роль по тегу, не по языку)
+out = core.mux(out, core.probe(out), srt("ja.srt", "こんにちは"), srt("de.srt", "Hallo"), "ja", "de")
+assert len(rows(out)) == 5 and ours(out) == [("jpn", "Japanese (Whisper)", "orig"), ("ger", "Deutsch", "trans")], rows(out)
 
-# 3. сбой перевода: прежняя русская дорожка программы сохраняется
-out = core.mux(out, core.probe(out), srt("en.srt", "Third"), None, keep_old_ru=True)
-assert sorted(x[2] for x in rows(out) if x[4]) == sorted([core.EN_TITLE, core.RU_TITLE]), rows(out)
+# 3. сбой перевода: прежний перевод программы на тот же язык сохраняется, на другой — нет
+out = core.mux(out, core.probe(out), srt("ja.srt", "Third"), None, "ja", "de", keep_old_trans=True)
+assert ours(out) == [("ger", "Deutsch", "trans"), ("jpn", "Japanese (Whisper)", "orig")], ours(out)
+out = core.mux(out, core.probe(out), srt("ja.srt", "Fourth"), None, "ja", "fr", keep_old_trans=True)
+assert ours(out) == [("jpn", "Japanese (Whisper)", "orig")], ours(out)
+
+# 3b. файл старой версии (SUBGEN=1 без SUBGEN_ROLE): eng — оригинал, rus — перевод; обе заменяются
+old = os.path.join(d, "old.mkv")
+subprocess.run([core.FFMPEG, "-v", "error", "-i", out, "-i", srt("o1.srt", "Old en"), "-i", srt("o2.srt", "Старый"),
+                "-map", "0:v", "-map", "0:a", "-map", "1", "-map", "2", "-c", "copy",
+                "-metadata:s:s:0", "language=eng", "-metadata:s:s:0", "SUBGEN=1",
+                "-metadata:s:s:1", "language=rus", "-metadata:s:s:1", "SUBGEN=1", old], check=True)
+os.remove(out)
+assert [x[2] for x in ours(old)] == ["orig", "trans"], ours(old)
+out = core.mux(old, core.probe(old), srt("en.srt", "New"), None, "en", "ru", keep_old_trans=True)
+assert ours(out) == [("rus", "", "trans"), ("eng", "English (Whisper)", "orig")], ours(out)
 
 # 4. менеджер дорожек: переименование, язык, default, удаление; видео удалить нельзя
 info = core.probe(out)

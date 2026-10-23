@@ -8,7 +8,7 @@ DATA = os.path.join(os.environ["LOCALAPPDATA"], "Subgen")
 WHISPER_DIR = os.path.join(DATA, "models", "whisper")        # формат кэша Hugging Face (models--org--name)
 TRANSLATE_DIR = os.path.join(DATA, "models", "translate")    # по папке на модель
 SETTINGS = os.path.join(DATA, "settings.json")
-DEFAULTS = {"whisper": "large-v3-turbo", "translator": "google"}
+DEFAULTS = {"whisper": "large-v3-turbo", "translator": "google", "target": "ru"}
 
 MB = 1024 ** 2
 WHISPER_FILES = ["config.json", "preprocessor_config.json", "model.bin", "tokenizer.json", "vocabulary.*"]
@@ -43,6 +43,74 @@ TRANSLATORS = {
                       files=["config.json", "model.bin", "shared_vocabulary.json", "spiece.model"]),
 }
 
+# Языки: код Whisper (ISO 639-1) -> (ISO 639-2/B для MKV, код FLORES-200 для NLLB, название, самоназвание)
+LANGS = {
+    "en": ("eng", "eng_Latn", "English", "English"),
+    "ru": ("rus", "rus_Cyrl", "Russian", "Русский"),
+    "uk": ("ukr", "ukr_Cyrl", "Ukrainian", "Українська"),
+    "be": ("bel", "bel_Cyrl", "Belarusian", "Беларуская"),
+    "de": ("ger", "deu_Latn", "German", "Deutsch"),
+    "fr": ("fre", "fra_Latn", "French", "Français"),
+    "es": ("spa", "spa_Latn", "Spanish", "Español"),
+    "it": ("ita", "ita_Latn", "Italian", "Italiano"),
+    "pt": ("por", "por_Latn", "Portuguese", "Português"),
+    "nl": ("dut", "nld_Latn", "Dutch", "Nederlands"),
+    "pl": ("pol", "pol_Latn", "Polish", "Polski"),
+    "cs": ("cze", "ces_Latn", "Czech", "Čeština"),
+    "sk": ("slo", "slk_Latn", "Slovak", "Slovenčina"),
+    "sl": ("slv", "slv_Latn", "Slovenian", "Slovenščina"),
+    "hr": ("hrv", "hrv_Latn", "Croatian", "Hrvatski"),
+    "sr": ("srp", "srp_Cyrl", "Serbian", "Српски"),
+    "bg": ("bul", "bul_Cyrl", "Bulgarian", "Български"),
+    "ro": ("rum", "ron_Latn", "Romanian", "Română"),
+    "hu": ("hun", "hun_Latn", "Hungarian", "Magyar"),
+    "el": ("gre", "ell_Grek", "Greek", "Ελληνικά"),
+    "tr": ("tur", "tur_Latn", "Turkish", "Türkçe"),
+    "sv": ("swe", "swe_Latn", "Swedish", "Svenska"),
+    "no": ("nor", "nob_Latn", "Norwegian", "Norsk"),
+    "da": ("dan", "dan_Latn", "Danish", "Dansk"),
+    "fi": ("fin", "fin_Latn", "Finnish", "Suomi"),
+    "et": ("est", "est_Latn", "Estonian", "Eesti"),
+    "lv": ("lav", "lvs_Latn", "Latvian", "Latviešu"),
+    "lt": ("lit", "lit_Latn", "Lithuanian", "Lietuvių"),
+    "ka": ("geo", "kat_Geor", "Georgian", "ქართული"),
+    "hy": ("arm", "hye_Armn", "Armenian", "Հայերեն"),
+    "az": ("aze", "azj_Latn", "Azerbaijani", "Azərbaycan"),
+    "kk": ("kaz", "kaz_Cyrl", "Kazakh", "Қазақ"),
+    "uz": ("uzb", "uzn_Latn", "Uzbek", "Oʻzbek"),
+    "he": ("heb", "heb_Hebr", "Hebrew", "עברית"),
+    "ar": ("ara", "arb_Arab", "Arabic", "العربية"),
+    "fa": ("per", "pes_Arab", "Persian", "فارسی"),
+    "hi": ("hin", "hin_Deva", "Hindi", "हिन्दी"),
+    "bn": ("ben", "ben_Beng", "Bengali", "বাংলা"),
+    "ur": ("urd", "urd_Arab", "Urdu", "اردو"),
+    "ta": ("tam", "tam_Taml", "Tamil", "தமிழ்"),
+    "th": ("tha", "tha_Thai", "Thai", "ไทย"),
+    "vi": ("vie", "vie_Latn", "Vietnamese", "Tiếng Việt"),
+    "id": ("ind", "ind_Latn", "Indonesian", "Bahasa Indonesia"),
+    "ms": ("may", "zsm_Latn", "Malay", "Bahasa Melayu"),
+    "tl": ("tgl", "tgl_Latn", "Tagalog", "Tagalog"),
+    "ja": ("jpn", "jpn_Jpan", "Japanese", "日本語"),
+    "ko": ("kor", "kor_Hang", "Korean", "한국어"),
+    "zh": ("chi", "zho_Hans", "Chinese", "中文"),
+}
+
+
+def lang_from_tag(t):
+    """Код языка по тегу дорожки: en, eng, ger/deu, fre/fra... или None."""
+    t = (t or "").lower()
+    return next((c for c, v in LANGS.items() if t in (c, v[0], v[1][:3])), {"fas": "fa", "msa": "ms"}.get(t))
+
+
+def supports(translator, src, tgt):
+    """Умеет ли переводчик src -> tgt (src="auto" — язык ещё не определён)."""
+    kind = TRANSLATORS[translator].get("kind")
+    if kind == "marian":
+        return src in ("auto", "en") and tgt == "ru"
+    if kind == "nllb":
+        return src == "auto" or src in LANGS
+    return True
+
 
 def load_settings():
     try:
@@ -55,6 +123,8 @@ def load_settings():
         s["whisper"] = DEFAULTS["whisper"]
     if s["translator"] not in TRANSLATORS:
         s["translator"] = DEFAULTS["translator"]
+    if s["target"] not in LANGS:
+        s["target"] = DEFAULTS["target"]
     return s
 
 

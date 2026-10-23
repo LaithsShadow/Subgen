@@ -15,6 +15,8 @@ ICON = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
 OK, ERR, WARN, BUSY, MUTED = "#22c55e", "#ef4444", "#f59e0b", "#60a5fa", "gray60"
 VIDEO_TYPES = [("Видео", " ".join("*" + e for e in sorted(core.VIDEO_EXT)))]
 TAB_GEN, TAB_TRACKS, TAB_MODELS = "Генерация", "Дорожки", "Модели"
+AUTO = "Автоопределение"
+BY_NAME = {v[2]: k for k, v in models.LANGS.items()}  # "Japanese" -> "ja"
 
 
 def fmt(sec):
@@ -30,7 +32,7 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
     def __init__(self, paths):
         super().__init__()
         self.TkdndVersion = TkinterDnD._require(self)
-        self.title("Subgen — субтитры EN + RU")
+        self.title("Subgen — субтитры и перевод")
         self.geometry("900x740")
         self.minsize(760, 600)
         self.after(300, self.set_icon)  # customtkinter сам ставит свою иконку через 200 мс
@@ -47,6 +49,7 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
         self.build_gen(self.tabs.tab(TAB_GEN))
         self.build_tracks(self.tabs.tab(TAB_TRACKS))
         self.build_models(self.tabs.tab(TAB_MODELS))
+        self.show_cfg()
 
         self.drop_target_register(DND_FILES)
         self.dnd_bind("<<Drop>>", lambda e: self.on_drop(self.tk.splitlist(e.data)))
@@ -107,13 +110,22 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
 
         opt = ctk.CTkFrame(tab, fg_color="transparent")
         opt.grid(row=2, column=0, padx=6, pady=(10, 2), sticky="ew")
-        opt.columnconfigure(1, weight=1)
+        opt.columnconfigure(4, weight=1)
+        names = sorted(BY_NAME)
+        self.var_src = ctk.StringVar(value=AUTO)
+        self.var_tgt = ctk.StringVar(value=models.LANGS[models.load_settings()["target"]][2])
+        ctk.CTkLabel(opt, text="Язык оригинала:").grid(row=0, column=0, padx=(0, 6), sticky="w")
+        ctk.CTkOptionMenu(opt, values=[AUTO] + names, variable=self.var_src, width=170, dynamic_resizing=False,
+                          command=lambda _: self.show_cfg()).grid(row=0, column=1, padx=(0, 18), sticky="w")
+        ctk.CTkLabel(opt, text="Перевести на:").grid(row=0, column=2, padx=(0, 6), sticky="w")
+        ctk.CTkOptionMenu(opt, values=names, variable=self.var_tgt, width=150, dynamic_resizing=False,
+                          command=lambda v: (models.save_settings(target=BY_NAME[v]), self.show_cfg())).grid(
+            row=0, column=3, sticky="w")
         self.use_embedded = ctk.BooleanVar(value=False)
-        ctk.CTkCheckBox(opt, text="Использовать вшитые английские субтитры (без генерации)",
-                        variable=self.use_embedded).grid(row=0, column=0, sticky="w")
-        self.lbl_cfg = ctk.CTkLabel(opt, text="", text_color=MUTED, anchor="e")
-        self.lbl_cfg.grid(row=0, column=1, sticky="e")
-        self.show_cfg()
+        ctk.CTkCheckBox(opt, text="Использовать вшитые субтитры на языке оригинала (без генерации)",
+                        variable=self.use_embedded).grid(row=1, column=0, columnspan=4, pady=(8, 0), sticky="w")
+        self.lbl_cfg = ctk.CTkLabel(opt, text="", text_color=MUTED, anchor="e", justify="right")
+        self.lbl_cfg.grid(row=0, column=4, rowspan=2, padx=(12, 0), sticky="e")
 
         self.list = ctk.CTkScrollableFrame(tab, label_text="Очередь", label_anchor="w")
         self.list.grid(row=3, column=0, padx=6, pady=8, sticky="nsew")
@@ -140,9 +152,17 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
         self.log._textbox.tag_config("warn", foreground=WARN)
         self.log.grid(row=6, column=0, padx=6, pady=(2, 4), sticky="ew")
 
+    def langs(self):
+        return BY_NAME.get(self.var_src.get(), "auto"), BY_NAME[self.var_tgt.get()]
+
     def show_cfg(self):
-        s = models.load_settings()
-        self.lbl_cfg.configure(text=f"Whisper: {s['whisper']}  ·  перевод: {models.TRANSLATORS[s['translator']]['title']}")
+        s, (src, tgt) = models.load_settings(), self.langs()
+        for key, rb in self.rb_tr.items():  # OPUS-MT умеет только en→ru — для других пар недоступен
+            rb.configure(state="normal" if models.supports(key, src, tgt) else "disabled")
+        warn = ("модель .en — только английский" if s["whisper"].endswith(".en") and src not in ("auto", "en") else
+                "переводчик не поддерживает эту пару" if not models.supports(s["translator"], src, tgt) else "")
+        self.lbl_cfg.configure(text=f"Whisper: {s['whisper']}\nперевод: {models.TRANSLATORS[s['translator']]['title']}"
+                               + (f"\n{warn}" if warn else ""), text_color=WARN if warn else MUTED)
 
     def pick_files(self):
         self.add(filedialog.askopenfilenames(title="Выберите серии", filetypes=VIDEO_TYPES))
@@ -170,7 +190,7 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
     def set_state(self, it, state):
         it.state = state
         color = OK if state.startswith("готово") else ERR if state == "ошибка" else MUTED if state == "ожидает" else BUSY
-        it.label.configure(text=state, text_color=WARN if "только EN" in state else color)
+        it.label.configure(text=state, text_color=WARN if "без перевода" in state else color)
 
     def refresh_total(self):
         n = sum(1 for i in self.items if i.state.startswith(("готово", "ошибка")))
@@ -185,7 +205,7 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
         if not any(i.state == "ожидает" for i in self.items):
             return
         self.stop.clear()
-        self.run_job(self.work, self.use_embedded.get())
+        self.run_job(self.work, self.use_embedded.get(), *self.langs())
 
     def on_stop(self):
         self.stop.set()
@@ -199,7 +219,7 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
         else:
             self.destroy()
 
-    def work(self, use_embedded):  # фоновый поток: только очередь сообщений, виджетов не трогает
+    def work(self, use_embedded, source, target):  # фоновый поток: только очередь сообщений, виджетов не трогает
         ok = bad = 0
         try:
             while not self.stop.is_set():
@@ -213,8 +233,8 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
                 core.on_progress = lambda d, t: self.q.put(("progress", d, t))
                 core.on_log(f"\n=== Серия {n} из {total}: {os.path.basename(it.path)} ===")
                 try:
-                    core.on_log(f"Готово: {core.process(it.path, use_embedded)}")
-                    self.q.put(("state", it, "готово (только EN)" if self.warn else "готово"))
+                    core.on_log(f"Готово: {core.process(it.path, use_embedded, source=source, target=target)}")
+                    self.q.put(("state", it, "готово (без перевода)" if self.warn else "готово"))
                     ok += 1
                 except Exception as e:
                     core.on_log(f"ОШИБКА: {e}\nОригинал не тронут.")
@@ -384,15 +404,16 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
         s = models.load_settings()
         self.var_whisper = ctk.StringVar(value=s["whisper"])
         self.var_tr = ctk.StringVar(value=s["translator"])
-        self.model_rows = []
+        self.model_rows, self.rb_tr = [], {}
         r = 0
         for kind, head, hint, var, items in (
                 ("whisper", "Распознавание речи — Whisper",
                  "С видеокартой NVIDIA берите large-v3-turbo. Без неё — small или medium (на процессоре медленно). "
                  "Модели .en понимают только английский.", self.var_whisper,
                  [(k, k, v[2]) for k, v in models.WHISPER.items()]),
-                ("translate", "Перевод на русский",
-                 "Google — онлайн, не работает через некоторые VPN. Офлайн-модели работают без интернета.", self.var_tr,
+                ("translate", "Перевод",
+                 "Google — онлайн, не работает через некоторые VPN. Офлайн-модели работают без интернета. "
+                 "OPUS-MT переводит только с английского на русский.", self.var_tr,
                  [(k, v["title"], v["note"]) for k, v in models.TRANSLATORS.items()])):
             ctk.CTkLabel(box, text=head, font=ctk.CTkFont(size=16, weight="bold"), anchor="w").grid(
                 row=r, column=0, columnspan=5, padx=8, pady=(10 if r else 2, 0), sticky="w")
@@ -403,6 +424,8 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
                 rb = ctk.CTkRadioButton(box, text=name, value=key, variable=var, width=170,
                                         command=lambda k=kind, v=var: self.choose(k, v.get()))
                 rb.grid(row=r, column=0, padx=8, pady=1, sticky="w")
+                if kind == "translate":
+                    self.rb_tr[key] = rb
                 ctk.CTkLabel(box, text=note, anchor="w", text_color=MUTED).grid(row=r, column=1, padx=6, sticky="w")
                 size = models.size(kind, key)
                 ctk.CTkLabel(box, text=models.fmt_size(size) if size else "—", width=70, anchor="e").grid(row=r, column=2, padx=6)
