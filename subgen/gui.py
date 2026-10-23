@@ -217,8 +217,7 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
                     self.q.put(("state", it, "готово (только EN)" if self.warn else "готово"))
                     ok += 1
                 except Exception as e:
-                    core.on_log(f"ОШИБКА: {e}\nОригинал не тронут. Если .srt успели создаться, они лежат рядом с видео: "
-                                f"{os.path.dirname(it.path)}")
+                    core.on_log(f"ОШИБКА: {e}\nОригинал не тронут.")
                     self.q.put(("state", it, "ошибка"))
                     bad += 1
         except Exception as e:

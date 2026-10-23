@@ -35,7 +35,7 @@ def main():
             print(f"Готово: {out}")
             ok.append(out)
         except Exception as e:
-            print(f"ОШИБКА: {e}\nОригинал не тронут. Если .srt успели создаться, они лежат рядом с видео: {os.path.dirname(v)}")
+            print(f"ОШИБКА: {e}\nОригинал не тронут.")
             bad.append(v)
     print(f"\n===== Итог: успешно {len(ok)}, с ошибками {len(bad)} =====")
     for v in bad:

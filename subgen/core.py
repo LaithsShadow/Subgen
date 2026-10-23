@@ -1,5 +1,5 @@
 """Subgen: английские субтитры (Whisper или вшитые) + русский перевод, вшиваются в MKV."""
-import glob, json, os, re, shutil, subprocess, sys, time
+import glob, json, os, re, shutil, subprocess, sys, tempfile, time
 
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 os.environ.setdefault("HF_HUB_VERBOSITY", "error")
@@ -332,8 +332,15 @@ def process(video, use_embedded=False, whisper_key=None, translator=None):
     s = models.load_settings()
     whisper_key, translator = whisper_key or s["whisper"], translator or s["translator"]
     info = probe(video)
-    base = os.path.splitext(video)[0]
-    en_srt, ru_srt = base + ".en.srt", base + ".ru.srt"
+    tmp = tempfile.mkdtemp(prefix="subgen-")  # .srt нужны только для вшивания, рядом с видео не оставляем
+    try:
+        return _process(video, info, use_embedded, whisper_key, translator, tmp)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _process(video, info, use_embedded, whisper_key, translator, tmp):
+    en_srt, ru_srt = os.path.join(tmp, "en.srt"), os.path.join(tmp, "ru.srt")
     src = None
     if use_embedded:
         src = next((x for x in info["streams"] if x["codec_type"] == "subtitle" and not is_ours(x)
@@ -353,19 +360,24 @@ def process(video, use_embedded=False, whisper_key=None, translator=None):
     if ru:
         write_srt(ru_srt, [(a, b, t) for (a, b, _), t in zip(cues, ru)])
     else:
-        if os.path.exists(ru_srt):
-            os.remove(ru_srt)  # старый файл с английским текстом не оставляем
         hint = ("Google Переводчик недоступен (вероятно, из-за VPN). Выключите VPN или выберите офлайн-переводчик\n"
                 "!! на вкладке «Модели»" if translator == "google" else "офлайн-переводчик выдал ошибку (см. выше)")
         on_log(f"!! ПЕРЕВОД НЕ УДАЛСЯ: {hint}. Новая русская дорожка НЕ добавлена.\n"
                "!! Запустите обработку этого .mkv ещё раз — дорожки программы заменятся.")
-    on_log(f"Субтитры сохранены: {os.path.basename(en_srt)}" + (f", {os.path.basename(ru_srt)}" if ru else ""))
     on_log("Вшиваю дорожки в MKV...")
     on_stage("вшивание")
     old_ru = not ru and any(is_ours(x) and lang(x) == "rus" for x in info["streams"])
     if old_ru:
         on_log("Прежняя русская дорожка программы оставлена.")
-    return mux(video, info, None if src else en_srt, ru_srt if ru else None, src["index"] if src else None, old_ru)
+    try:
+        return mux(video, info, None if src else en_srt, ru_srt if ru else None, src["index"] if src else None, old_ru)
+    except Exception:
+        base = os.path.splitext(video)[0]  # вшить не вышло — сохраняем готовые субтитры рядом, чтобы работа не пропала
+        saved = [shutil.copy(f, base + "." + os.path.basename(f))
+                 for f in (en_srt, ru_srt) if os.path.exists(f)]
+        if saved:
+            on_log("Субтитры сохранены рядом с видео: " + ", ".join(map(os.path.basename, saved)))
+        raise
 
 
 def collect(paths):
