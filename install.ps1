@@ -1,5 +1,7 @@
 ﻿# Установка Subgen: uv, ffmpeg, Python 3.12 (uv), окружение с зависимостями и ярлыки «Subgen».
 # Повторный запуск безопасен: уже установленное пропускается, зависимости и ярлыки обновляются.
+# install.ps1 -Lang de — язык интерфейса без вопроса (код из subgen\locales: en, ru, de, ja...).
+param([string]$Lang)
 $ErrorActionPreference = 'Stop'
 $Repo = $PSScriptRoot
 $Data = Join-Path $env:LOCALAPPDATA 'Subgen'
@@ -28,6 +30,31 @@ $HasWinget = [bool](Get-Command winget -ErrorAction SilentlyContinue)
 
 Write-Host "Subgen: установка из $Repo"
 Write-Host "Окружение и модели: $Data"
+
+Step 'Язык интерфейса / Interface language'
+$Langs = @(Get-ChildItem (Join-Path $Repo 'subgen\locales\*.json') | ForEach-Object { $_.BaseName } | Sort-Object)
+$Names = @{}
+foreach ($c in $Langs) {
+    $Names[$c] = (Get-Content -Raw -Encoding UTF8 (Join-Path $Repo "subgen\locales\$c.json") | ConvertFrom-Json).'lang.name'
+}
+if ($Lang) {
+    if ($Langs -notcontains $Lang) { Fail "неизвестный язык / unknown language -Lang $Lang. Есть / available: $($Langs -join ', ')" }
+    $UiLang = $Lang
+} else {
+    $sys = (Get-UICulture).TwoLetterISOLanguageName
+    if ($sys -in 'nb', 'nn') { $sys = 'no' } elseif ($sys -eq 'fil') { $sys = 'tl' }
+    $UiLang = if ($Langs -contains $sys) { $sys } else { 'en' }
+    for ($i = 0; $i -lt $Langs.Count; $i += 3) {  # три колонки, чтобы список влез в окно
+        Write-Host (($i..[Math]::Min($i + 2, $Langs.Count - 1) | ForEach-Object {
+            ('{0,3}. {1} ({2})' -f ($_ + 1), $Names[$Langs[$_]], $Langs[$_]).PadRight(30) }) -join '')
+    }
+    $ans = (Read-Host "Номер или код / number or code [Enter = $($Names[$UiLang]) ($UiLang)]")
+    if ($ans) { $ans = $ans.Trim().ToLower() }
+    if ($ans -match '^\d+$' -and [int]$ans -ge 1 -and [int]$ans -le $Langs.Count) { $UiLang = $Langs[[int]$ans - 1] }
+    elseif ($Langs -contains $ans) { $UiLang = $ans }
+    elseif ($ans) { Write-Host "не понял «$ans» / not understood — $UiLang" }
+}
+Write-Host "-> $($Names[$UiLang]) ($UiLang)"
 
 Step 'uv (менеджер Python)'
 $Uv = Find-Uv
@@ -83,6 +110,12 @@ if ($LASTEXITCODE) { Fail 'не удалось установить зависи
 & $Py -c "import faster_whisper, ctranslate2, sentencepiece, customtkinter, tkinterdnd2, send2trash"
 if ($LASTEXITCODE) { Fail 'зависимости установились, но не импортируются' }
 
+Step 'Настройки / settings'
+# через Python программы: остальные настройки сохраняются, файл пишется в UTF-8 без BOM
+& $Py -c "import sys; sys.path.insert(0, sys.argv[1]); from subgen import models; models.save_settings(ui_lang=sys.argv[2])" $Repo $UiLang
+if ($LASTEXITCODE) { Fail 'не удалось записать settings.json' }
+Write-Host "ui_lang = $UiLang"
+
 Step 'Ярлыки'
 # WScript.Shell портит кириллицу в путях, поэтому ярлык создаётся через IShellLinkW
 Add-Type -TypeDefinition @'
@@ -120,7 +153,7 @@ $Icon = Join-Path $Repo 'assets\subgen.ico'
 $Gui = Join-Path $Repo 'subgen-gui.pyw'
 foreach ($dir in [Environment]::GetFolderPath('Desktop'), [Environment]::GetFolderPath('Programs')) {
     $lnk = Join-Path $dir 'Subgen.lnk'
-    [SubgenLnk]::Create($lnk, $PyW, "`"$Gui`"", $Repo, $Icon, 'Subgen — английские и русские субтитры для видео')
+    [SubgenLnk]::Create($lnk, $PyW, "`"$Gui`"", $Repo, $Icon, 'Subgen — subtitles and translation for video')
     Write-Host $lnk
 }
 

@@ -2,8 +2,9 @@
 import re
 
 from . import core
+from .i18n import t
 
-TYPES = {"video": "видео", "audio": "аудио", "subtitle": "субтитры", "attachment": "вложение", "data": "данные"}
+TYPES = {k: t("type." + k) for k in ("video", "audio", "subtitle", "attachment", "data")}
 DELETABLE = {"audio", "subtitle"}  # видео не удаляем никогда — значит, последнее видео всегда остаётся
 
 
@@ -19,14 +20,14 @@ def apply(video, info, edits):
     """edits: {индекс: {"title", "language", "default", "delete"}} — только изменённые поля. Возвращает новый путь."""
     for i, e in edits.items():
         if e.get("language") and not re.fullmatch(r"[a-z]{3}", e["language"]):
-            raise ValueError(f"дорожка #{i}: язык — трёхбуквенный код ISO 639-2 (eng, rus, jpn), а не «{e['language']}»")
+            raise ValueError(t("err.lang_code", i=i, lang=e["language"]))
     by_index = {s["index"]: s for s in info["streams"]}
     for i, e in edits.items():
         if e.get("delete") and by_index[i]["codec_type"] not in DELETABLE:
-            raise ValueError(f"дорожку #{i} ({TYPES.get(by_index[i]['codec_type'])}) удалять нельзя")
+            raise ValueError(t("err.cant_delete", i=i, type=TYPES.get(by_index[i]["codec_type"])))
     keep = [s for s in info["streams"] if s["codec_type"] != "data" and not edits.get(s["index"], {}).get("delete")]
     if not any(s["codec_type"] == "video" for s in keep) and any(s["codec_type"] == "video" for s in info["streams"]):
-        raise ValueError("нельзя удалить последнюю видеодорожку")
+        raise ValueError(t("err.last_video"))
     opts = []
     for out, s in enumerate(keep):
         e = edits.get(s["index"], {})

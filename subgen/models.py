@@ -1,6 +1,9 @@
 """Каталог моделей Whisper и офлайн-переводчиков: где лежат, скачаны ли, загрузка с прогрессом, удаление."""
 import fnmatch, glob, json, os, shutil, threading
 
+from . import i18n
+from .i18n import t
+
 # Обычная HTTP-загрузка пишет файл постепенно — по размеру папки виден прогресс (xet пишет файл целиком в конце)
 os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
 
@@ -8,37 +11,37 @@ DATA = os.path.join(os.environ["LOCALAPPDATA"], "Subgen")
 WHISPER_DIR = os.path.join(DATA, "models", "whisper")        # формат кэша Hugging Face (models--org--name)
 TRANSLATE_DIR = os.path.join(DATA, "models", "translate")    # по папке на модель
 SETTINGS = os.path.join(DATA, "settings.json")
-DEFAULTS = {"whisper": "large-v3-turbo", "translator": "google", "target": "ru"}
+DEFAULTS = {"whisper": "large-v3-turbo", "translator": "google", "target": "ru", "ui_lang": i18n.system_lang()}
 
 MB = 1024 ** 2
 WHISPER_FILES = ["config.json", "preprocessor_config.json", "model.bin", "tokenizer.json", "vocabulary.*"]
 # ключ: (репозиторий, примерный размер, подпись)
 WHISPER = {
-    "tiny":           ("Systran/faster-whisper-tiny", 75 * MB, "самая быстрая, низкое качество"),
-    "tiny.en":        ("Systran/faster-whisper-tiny.en", 75 * MB, "только английский"),
-    "base":           ("Systran/faster-whisper-base", 145 * MB, "быстрая, слабое качество"),
-    "base.en":        ("Systran/faster-whisper-base.en", 145 * MB, "только английский"),
-    "small":          ("Systran/faster-whisper-small", 485 * MB, "для слабых ПК без видеокарты"),
-    "small.en":       ("Systran/faster-whisper-small.en", 485 * MB, "только английский"),
-    "medium":         ("Systran/faster-whisper-medium", 1530 * MB, "хорошее качество, медленнее"),
-    "medium.en":      ("Systran/faster-whisper-medium.en", 1530 * MB, "только английский"),
-    "large-v2":       ("Systran/faster-whisper-large-v2", 3090 * MB, "очень точная, медленная"),
-    "large-v3":       ("Systran/faster-whisper-large-v3", 3090 * MB, "самая точная, медленная"),
-    "large-v3-turbo": ("mobiuslabsgmbh/faster-whisper-large-v3-turbo", 1540 * MB, "рекомендуется: точная и быстрая"),
+    "tiny":           ("Systran/faster-whisper-tiny", 75 * MB, t("w.tiny")),
+    "tiny.en":        ("Systran/faster-whisper-tiny.en", 75 * MB, t("w.en")),
+    "base":           ("Systran/faster-whisper-base", 145 * MB, t("w.base")),
+    "base.en":        ("Systran/faster-whisper-base.en", 145 * MB, t("w.en")),
+    "small":          ("Systran/faster-whisper-small", 485 * MB, t("w.small")),
+    "small.en":       ("Systran/faster-whisper-small.en", 485 * MB, t("w.en")),
+    "medium":         ("Systran/faster-whisper-medium", 1530 * MB, t("w.medium")),
+    "medium.en":      ("Systran/faster-whisper-medium.en", 1530 * MB, t("w.en")),
+    "large-v2":       ("Systran/faster-whisper-large-v2", 3090 * MB, t("w.large2")),
+    "large-v3":       ("Systran/faster-whisper-large-v3", 3090 * MB, t("w.large3")),
+    "large-v3-turbo": ("mobiuslabsgmbh/faster-whisper-large-v3-turbo", 1540 * MB, t("w.turbo")),
 }
 # kind: как кодировать текст для модели (см. core.Translator)
 TRANSLATORS = {
-    "google":    dict(title="Google Переводчик (онлайн)", size=0, note="по умолчанию, нужен интернет"),
-    "opus-mt":   dict(title="OPUS-MT en→ru", size=80 * MB, kind="marian", note="маленькая и быстрая",
+    "google":    dict(title=t("tr.google"), size=0, note=t("tr.google_note")),
+    "opus-mt":   dict(title="OPUS-MT en→ru", size=80 * MB, kind="marian", note=t("tr.opus_note"),
                       repo="manancode/opus-mt-en-ru-ctranslate2-android",
                       files=["config.json", "model.bin", "shared_vocabulary.json", "source.spm", "target.spm"]),
-    "nllb-600m": dict(title="NLLB-200 600M", size=600 * MB, kind="nllb", note="хорошее качество",
+    "nllb-600m": dict(title="NLLB-200 600M", size=600 * MB, kind="nllb", note=t("tr.nllb600_note"),
                       repo="JustFrederik/nllb-200-distilled-600M-ct2-int8",
                       files=["config.json", "model.bin", "shared_vocabulary.txt", "sentencepiece.bpe.model"]),
-    "nllb-1.3b": dict(title="NLLB-200 1.3B", size=1330 * MB, kind="nllb", note="лучший офлайн-вариант",
+    "nllb-1.3b": dict(title="NLLB-200 1.3B", size=1330 * MB, kind="nllb", note=t("tr.nllb13_note"),
                       repo="JustFrederik/nllb-200-distilled-1.3B-ct2-int8",
                       files=["config.json", "model.bin", "shared_vocabulary.txt", "sentencepiece.bpe.model"]),
-    "madlad-3b": dict(title="MADLAD-400 3B", size=2820 * MB, kind="madlad", note="крупная, нужна видеокарта",
+    "madlad-3b": dict(title="MADLAD-400 3B", size=2820 * MB, kind="madlad", note=t("tr.madlad_note"),
                       repo="Nextcloud-AI/madlad400-3b-mt-ct2-int8",
                       files=["config.json", "model.bin", "shared_vocabulary.json", "spiece.model"]),
 }
@@ -125,6 +128,8 @@ def load_settings():
         s["translator"] = DEFAULTS["translator"]
     if s["target"] not in LANGS:
         s["target"] = DEFAULTS["target"]
+    if s["ui_lang"] not in i18n.available():
+        s["ui_lang"] = DEFAULTS["ui_lang"]
     return s
 
 
@@ -158,7 +163,7 @@ def size(kind, key):
 
 
 def fmt_size(n):
-    return f"{n / 1024 ** 3:.1f} ГБ" if n >= 1024 ** 3 else f"{n / MB:.0f} МБ"
+    return t("size.gb", n=f"{n / 1024 ** 3:.1f}") if n >= 1024 ** 3 else t("size.mb", n=f"{n / MB:.0f}")
 
 
 def _dir_size(path):
@@ -194,7 +199,7 @@ def download(kind, key, on_progress=lambda done, total: None):
     on_progress(total, total)
     path = local_path(kind, key)
     if not path:
-        raise RuntimeError(f"модель {key} скачалась не полностью")
+        raise RuntimeError(t("err.incomplete", key=key))
     return path
 
 

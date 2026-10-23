@@ -13,6 +13,7 @@ for _d in glob.glob(os.path.join(sys.prefix, "Lib", "site-packages", "nvidia", "
 import numpy as np
 
 from . import models
+from .i18n import t
 
 VIDEO_EXT = {".mkv", ".mp4", ".avi", ".webm", ".m4v", ".mov"}
 TEXT_SUBS = {"subrip", "ass", "ssa", "webvtt", "mov_text", "text"}
@@ -21,8 +22,9 @@ ROLE = "SUBGEN_ROLE"  # orig — оригинал (Whisper), trans — пере�
 
 # Хуки для GUI; в консоли — print
 on_log = print
-on_stage = lambda name: None          # "загрузка модели" | "распознавание" | "перевод" | "вшивание"
+on_stage = lambda key: None           # "download" | "asr" | "translate" | "mux" (подписи — stage.* в locales)
 on_progress = lambda done, total: None
+on_untranslated = lambda: None  # дорожка перевода не добавлена из-за сбоя
 
 
 def find_tool(name):
@@ -36,7 +38,7 @@ def find_tool(name):
 
 
 FFMPEG, FFPROBE = find_tool("ffmpeg"), find_tool("ffprobe")
-NO_FFMPEG = "Не найден ffmpeg. Запустите install.cmd или: winget install --id Gyan.FFmpeg -e"
+NO_FFMPEG = t("err.no_ffmpeg")
 
 
 def run(args):
@@ -121,8 +123,8 @@ def ensure_model(kind, key):
     path = models.local_path(kind, key)
     if path:
         return path
-    on_stage("загрузка модели")
-    on_log(f"Скачиваю модель {key} (~{models.fmt_size(models.size(kind, key))}), это делается один раз...")
+    on_stage("download")
+    on_log(t("log.downloading_model", key=key, size=models.fmt_size(models.size(kind, key))))
     return models.download(kind, key, on_progress)
 
 
@@ -146,21 +148,20 @@ def whisper(video, info, key, source="auto"):
     global _whisper
     if key.endswith(".en"):
         if source not in ("auto", "en"):
-            raise RuntimeError(f"модель {key} распознаёт только английский, а язык оригинала — {name(source)}. "
-                               "Выберите на вкладке «Модели» модель без .en")
+            raise RuntimeError(t("err.en_only", key=key, lang=name(source)))
         if source == "auto":
-            on_log(f"Модель {key} понимает только английский — язык оригинала считается английским.")
+            on_log(t("log.en_only", key=key))
         source = "en"
     audios = [s for s in info["streams"] if s["codec_type"] == "audio"]
     if not audios:
-        raise RuntimeError("в файле нет звуковой дорожки")
+        raise RuntimeError(t("err.no_audio"))
     audio = (next((s for s in audios if models.lang_from_tag(lang(s)) == source), None)
              or next((s for s in audios if s.get("disposition", {}).get("default")), audios[0]))
     if len(audios) > 1:
-        on_log(f"Звуковая дорожка #{audio['index']} ({lang(audio) or 'язык не указан'}).")
+        on_log(t("log.audio_track", i=audio["index"], lang=lang(audio) or t("word.no_lang")))
     path = ensure_model("whisper", key)
-    on_stage("распознавание")
-    on_log("Извлекаю звук...")
+    on_stage("asr")
+    on_log(t("log.extract"))
     # звук сразу в numpy через ffmpeg (декодер PyAV в faster-whisper несовместим с новыми av)
     raw = subprocess.run([FFMPEG, "-v", "error", "-i", video, "-map", f"0:{audio['index']}", "-ac", "1", "-ar", "16000",
                           "-f", "f32le", "-"], capture_output=True, check=True, creationflags=subprocess.CREATE_NO_WINDOW).stdout
@@ -172,12 +173,12 @@ def whisper(video, info, key, source="auto"):
         try:
             if not _whisper or _whisper[:2] != (key, device):
                 _whisper = None
-                on_log(f"Загружаю модель Whisper {key} на {device.upper()}...")
+                on_log(t("log.load_whisper", key=key, device=device.upper()))
                 _whisper = (key, device, WhisperModel(path, device=device, compute_type=ctype))
-            on_log(f"Распознавание речи: Whisper {key}, {device.upper()} ({ctype})")
+            on_log(t("log.asr", key=key, device=device.upper(), ctype=ctype))
             segments, si = _whisper[2].transcribe(wav, language=None if source == "auto" else source, vad_filter=True)
             if source == "auto":
-                on_log(f"Язык речи: {name(si.language)} ({si.language}), вероятность {si.language_probability:.0%}")
+                on_log(t("log.detected", name=name(si.language), code=si.language, p=round(si.language_probability * 100)))
             cues, total = [], max(1, round(si.duration))
             for seg in segments:
                 cues.append((ts(seg.start), ts(seg.end), seg.text.strip()))
@@ -188,7 +189,7 @@ def whisper(video, info, key, source="auto"):
             # на CPU переходим только при проблемах с видеокартой, прочие ошибки показываем как есть
             if device == "cpu" or not gpu_error(e):
                 raise
-            on_log(f"\n!! Видеокарта (CUDA) не сработала: {e}\n!! Перехожу на процессор — это будет заметно медленнее.")
+            on_log(t("log.gpu_fail", error=e))
             _whisper = None
 
 
@@ -233,7 +234,7 @@ def offline(lines, key, src, tgt):
     import ctranslate2, sentencepiece as spm
     m = models.TRANSLATORS[key]
     path, kind = ensure_model("translate", key), m["kind"]
-    on_stage("перевод")
+    on_stage("translate")
     sp = lambda f: spm.SentencePieceProcessor(model_file=os.path.join(path, f))
     enc = {"marian": lambda s, t: s.encode(t, out_type=str) + ["</s>"],
            "nllb": lambda s, t: [models.LANGS[src][1]] + s.encode(t, out_type=str) + ["</s>"],
@@ -245,12 +246,12 @@ def offline(lines, key, src, tgt):
         try:
             if not _translator or _translator[:2] != (key, device):
                 _translator = None
-                on_log(f"Загружаю переводчик {m['title']} на {device.upper()}...")
+                on_log(t("log.load_tr", name=m["title"], device=device.upper()))
                 files = ("source.spm", "target.spm") if kind == "marian" else (
                     ("sentencepiece.bpe.model",) * 2 if kind == "nllb" else ("spiece.model",) * 2)
                 _translator = (key, device, ctranslate2.Translator(path, device=device, compute_type=ctype),
                                sp(files[0]), sp(files[1]))
-            on_log(f"Перевод: {m['title']} (офлайн, {device.upper()})")
+            on_log(t("log.tr_offline", name=m["title"], device=device.upper()))
             _, _, tr, sp_src, sp_tgt = _translator
             out = []
             for i in range(0, len(lines), 32):
@@ -267,31 +268,31 @@ def offline(lines, key, src, tgt):
         except Exception as e:
             if device == "cpu" or not gpu_error(e):
                 raise
-            on_log(f"!! Видеокарта (CUDA) не сработала для перевода: {e}\n!! Перехожу на процессор.")
+            on_log(t("log.gpu_fail_tr", error=e))
             _translator = None
 
 
 def translate(lines, key, src, tgt):
     """Список переведённых строк или None, если перевести не удалось совсем."""
-    on_log(f"Перевод: {name(src)} → {name(tgt)}")
+    on_log(t("log.tr_pair", src=name(src), tgt=name(tgt)))
     if key == "google":
-        on_stage("перевод")
-        on_log("Перевод: Google Переводчик (онлайн)")
+        on_stage("translate")
+        on_log(t("log.tr_google"))
         out = google(lines, src, tgt)
     elif not models.supports(key, src, tgt):
-        on_log(f"!! {models.TRANSLATORS[key]['title']} не умеет переводить {name(src)} → {name(tgt)}.")
+        on_log(t("log.tr_unsupported", name=models.TRANSLATORS[key]["title"], src=name(src), tgt=name(tgt)))
         return None
     else:
         try:
             out = offline(lines, key, src, tgt)
         except Exception as e:
-            on_log(f"!! Офлайн-переводчик {key} не сработал: {e}")
+            on_log(t("log.tr_offline_fail", key=key, error=e))
             return None
     failed = out.count(None)
     if failed == len(lines):
         return None
     if failed:
-        on_log(f"Внимание: {failed} из {len(lines)} строк остались без перевода (оставлен исходный текст).")
+        on_log(t("log.tr_partial", failed=failed, total=len(lines)))
     return [t or l for t, l in zip(out, lines)]
 
 
@@ -307,7 +308,7 @@ def remux(video, info, keep, extra=(), opts=()):
     base = os.path.splitext(video)[0]
     target = base + ".mkv"
     if os.path.exists(target) and os.path.normcase(target) != os.path.normcase(video):
-        raise RuntimeError(f"рядом уже есть файл {os.path.basename(target)}, не перезаписываю")
+        raise RuntimeError(t("err.target_exists", name=os.path.basename(target)))
     tmp = base + ".tmp_subs.mkv"
     args = [FFMPEG, "-y", "-v", "error", "-i", video]
     for f in extra:
@@ -326,10 +327,10 @@ def remux(video, info, keep, extra=(), opts=()):
         new = probe(tmp)
         d0, d1 = float(info["format"].get("duration", 0)), float(new["format"].get("duration", 0))
         if abs(d0 - d1) > max(2.0, d0 * 0.01):
-            raise RuntimeError(f"длительность не совпала ({d0:.1f} с против {d1:.1f} с)")
+            raise RuntimeError(t("err.duration", a=f"{d0:.1f}", b=f"{d1:.1f}"))
         want = len(keep) + len(extra)
         if len(new["streams"]) != want:
-            raise RuntimeError(f"ожидалось {want} потоков, получилось {len(new['streams'])}")
+            raise RuntimeError(t("err.streams", want=want, got=len(new["streams"])))
     except Exception:
         if os.path.exists(tmp):
             os.remove(tmp)
@@ -340,7 +341,7 @@ def remux(video, info, keep, extra=(), opts=()):
     else:  # Корзина Windows молча удаляет файлы с путём длиннее 260 символов — не рискуем
         keep_as = base + ".original" + os.path.splitext(video)[1]
         os.replace(video, keep_as)
-        on_log(f"Путь слишком длинный для Корзины, оригинал переименован: {os.path.basename(keep_as)}")
+        on_log(t("log.long_path", name=os.path.basename(keep_as)))
     os.replace(tmp, target)
     return target
 
@@ -386,42 +387,37 @@ def _process(video, info, use_embedded, whisper_key, translator, source, target,
             if src:
                 source = models.lang_from_tag(lang(src))
                 if not source:
-                    raise RuntimeError(f"у вшитой дорожки #{src['index']} язык не указан или неизвестен "
-                                       f"(«{lang(src) or 'нет'}») — выберите язык оригинала явно")
+                    raise RuntimeError(t("err.untagged", i=src["index"], lang=lang(src) or t("word.none")))
         else:
             src = next((x for x in subs if models.lang_from_tag(lang(x)) == source), None)
         if src:
-            on_log(f"Беру вшитые субтитры ({name(source)}): дорожка #{src['index']} ({title(src) or src['codec_name']}).")
+            on_log(t("log.embedded", lang=name(source), i=src["index"], title=title(src) or src["codec_name"]))
             orig_srt = os.path.join(tmp, f"{source}.srt")
             run([FFMPEG, "-y", "-v", "error", "-i", video, "-map", f"0:{src['index']}", "-c:s", "srt", orig_srt])
             cues = read_srt(orig_srt)
         else:
-            on_log("Вшитых текстовых субтитров" + ("" if source == "auto" else f" ({name(source)})")
-                   + " нет — генерирую через Whisper.")
+            on_log(t("log.no_embedded") if source == "auto" else t("log.no_embedded_lang", lang=name(source)))
     if not src:
         cues, source = whisper(video, info, whisper_key, source)
     if not cues:
-        raise RuntimeError("речь не найдена — субтитры пустые")
+        raise RuntimeError(t("err.no_speech"))
     orig_srt, trans_srt = os.path.join(tmp, f"{source}.srt"), os.path.join(tmp, f"{target}.srt")
     write_srt(orig_srt, cues)
     tr, keep_old = None, False
     if source == target:
-        on_log(f"Язык оригинала совпадает с языком перевода ({name(target)}) — перевод не нужен.")
+        on_log(t("log.same_lang", lang=name(target)))
     else:
         tr = translate([c[2] for c in cues], translator, source, target)
         if tr:
             write_srt(trans_srt, [(a, b, t) for (a, b, _), t in zip(cues, tr)])
         else:
-            hint = ("Google Переводчик недоступен (вероятно, из-за VPN). Выключите VPN или выберите офлайн-переводчик\n"
-                    "!! на вкладке «Модели»" if translator == "google" else
-                    "офлайн-переводчик выдал ошибку или не поддерживает эту пару языков (см. выше)")
-            on_log(f"!! ПЕРЕВОД НЕ УДАЛСЯ: {hint}. Новая дорожка перевода НЕ добавлена.\n"
-                   "!! Запустите обработку этого .mkv ещё раз — дорожки программы заменятся.")
+            on_log(t("log.tr_failed", hint=t("log.hint_google" if translator == "google" else "log.hint_offline")))
+            on_untranslated()
             keep_old = any(is_ours(x) and role(x) == "trans" and lang(x) == iso(target) for x in info["streams"])
             if keep_old:
-                on_log("Прежняя дорожка перевода программы оставлена.")
-    on_log("Вшиваю дорожки в MKV...")
-    on_stage("вшивание")
+                on_log(t("log.keep_old"))
+    on_log(t("log.muxing"))
+    on_stage("mux")
     try:
         return mux(video, info, None if src else orig_srt, trans_srt if tr else None, source, target,
                    src["index"] if src else None, keep_old)
@@ -430,7 +426,7 @@ def _process(video, info, use_embedded, whisper_key, translator, source, target,
         saved = [shutil.copy(f, base + "." + os.path.basename(f))
                  for f in (orig_srt, trans_srt) if os.path.exists(f)]
         if saved:
-            on_log("Субтитры сохранены рядом с видео: " + ", ".join(map(os.path.basename, saved)))
+            on_log(t("log.saved", names=", ".join(map(os.path.basename, saved))))
         raise
 
 
@@ -443,5 +439,5 @@ def collect(paths):
         elif os.path.splitext(p)[1].lower() in VIDEO_EXT:
             videos.append(os.path.abspath(p))
         else:
-            on_log(f"Пропускаю (не видео): {p}")
+            on_log(t("log.skip", path=p))
     return videos

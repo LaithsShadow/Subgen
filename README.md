@@ -1,10 +1,10 @@
 # Subgen
 
-*Video subtitle generator: subtitles in the original language via Whisper (auto-detected), translation into ~50 languages, muxed into MKV. The UI is Russian-only for now.*
+*Video subtitle generator: subtitles in the original language via Whisper (auto-detected), translation into ~50 languages, muxed into MKV. UI in ~50 languages. **English: [README.en.md](README.en.md).***
 
 Subgen — программа для Windows, которая делает к видео субтитры на языке оригинала (распознаёт речь моделью Whisper, язык определяется сам) и перевод на выбранный язык, а затем вшивает обе дорожки в MKV-файл. Подходит для изучения любого языка: английский сериал с русским переводом, японское аниме с английским, немецкий фильм с украинским и т. д. Перетащили серии или папку — получили MKV с дорожками, например, «Japanese (Whisper)» и «Русский».
 
-Интерфейс программы пока только на русском.
+Интерфейс — на ~50 языках: язык выбирается при установке (по умолчанию — язык Windows, если он есть в списке, иначе английский) и меняется на вкладке «Модели» («Язык интерфейса», применяется после перезапуска). Русский и английский переведены вручную, остальные языки — машинным переводом, поэтому формулировки могут быть неточными.
 
 ![Вкладка «Генерация»](docs/tab-generation.png)
 
@@ -30,7 +30,7 @@ Subgen — программа для Windows, которая делает к в�
    ```
    git clone https://github.com/Laith-UE5/Subgen.git
    ```
-2. Запустите **`install.cmd`** двойным щелчком и дождитесь надписи «Готово».
+2. Запустите **`install.cmd`** двойным щелчком, выберите язык интерфейса (номер или код из списка; Enter — язык Windows) и дождитесь надписи «Готово». Без вопроса: `powershell -ExecutionPolicy Bypass -File install.ps1 -Lang ru`.
 
 Что делает установщик (его можно запускать повторно — уже установленное пропускается):
 
@@ -47,7 +47,7 @@ Subgen — программа для Windows, которая делает к в�
 | Код программы | папка, куда вы распаковали проект (ярлыки ссылаются на неё) |
 | Окружение Python | `%LOCALAPPDATA%\Subgen\venv` |
 | Модели | `%LOCALAPPDATA%\Subgen\models` |
-| Настройки (выбранные модели) | `%LOCALAPPDATA%\Subgen\settings.json` |
+| Настройки (модели, язык перевода, язык интерфейса `ui_lang`) | `%LOCALAPPDATA%\Subgen\settings.json` |
 
 Если переместили папку с программой — запустите `install.cmd` ещё раз, ярлыки обновятся. Путь может содержать пробелы и кириллицу.
 
@@ -125,6 +125,7 @@ subgen.cmd "D:\Аниме\Сезон 1" [--source auto|ja|en|...] [--target ru|e
 ## Для разработчиков
 
 - `subgen/core.py` — обработка (Whisper, перевод, вшивание), `subgen/models.py` — каталог и загрузка моделей, `subgen/tracks.py` — менеджер дорожек, `subgen/gui.py` — окно.
+- Тексты интерфейса — `subgen/locales/<код>.json`, функция `t()` в `subgen/i18n.py` (нет строки — берётся английская). `en.json` и `ru.json` правятся вручную; остальные пересоздаются из `en.json`: `python tools/gen_locales.py --force [--only de,ja] [--engine google|nllb-1.3b]`, проверка — `python tools/gen_locales.py --check`.
 - Быстрая проверка вшивания и менеджера дорожек без моделей: `%LOCALAPPDATA%\Subgen\venv\Scripts\python.exe tests\test_mux.py`.
 - Иконка рисуется скриптом `assets/make_icon.py` (Pillow).
 

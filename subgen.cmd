@@ -1,5 +1,5 @@
 @echo off
-rem Console mode: subgen.cmd VIDEO_OR_FOLDER... [--embedded-en] [--model M] [--translator T]
+rem Console mode: subgen.cmd VIDEO_OR_FOLDER... [--source auto/CODE] [--target CODE] [--embedded] [--model M] [--translator T]
 chcp 65001 >nul
 set PYTHONIOENCODING=utf-8
 set PYTHONUTF8=1
